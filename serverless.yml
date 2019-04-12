@@ -1,0 +1,193 @@
+service: CodeRecipeSample-CryptoExchange
+provider:
+  name: aws
+  runtime: python2.7
+  region: us-east-1
+  stage: ${opt:stage}
+  dbUser: ${opt:dbUser}
+  ROPSTEN_INFURA_KEY: ${opt:ROPSTEN_INFURA_KEY}
+  ETH_PRIV_KEY: ${opt:ETH_PRIV_KEY}
+  ETH_FROM_ADDRESS: ${opt:ETH_FROM_ADDRESS}
+  apiKeys:
+    - ${opt:stage}-scalableCryptoExchange
+  usagePlan:
+    quota:
+      limit: 5000
+      offset: 0
+      period: DAY
+    throttle:
+      burstLimit: 1
+      rateLimit: 1
+
+functions:
+  QueueHandler:
+    handler: src/handler.handle_queue
+    name: ${self:provider.stage}-QueueHandler
+    environment:
+      Stage: ${self:provider.stage}
+      QueueUrl: "#{OrderQueue}"
+    events:
+      - http:
+          path: place-order
+          method: POST
+          cors: true
+          integration: lambda
+          private: true
+    iamRoleStatementsName: ${self:provider.stage}-QueueHandler-role
+    iamRoleStatements:
+      - Effect: "Allow"
+        Action:
+          - sqs:*
+        Resource: "#{OrderQueue.Arn}"
+
+  OrderHandler:
+    handler: src/handler.handle_order
+    name: ${self:provider.stage}-OrderHandler
+    environment:
+      Stage: ${self:provider.stage}
+    events:
+      - sqs:
+          arn: "#{OrderQueue.Arn}"
+          batchSize: 1
+    iamRoleStatementsName: ${self:provider.stage}-OrderHandler-role
+    iamRoleStatements:
+      - Effect: "Allow"
+        Action:
+          - lambda:InvokeFunction
+        Resource: "arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:provider.stage}-UpdateSellerBankAccount"
+      - Effect: "Allow"
+        Action:
+          - lambda:InvokeFunction
+        Resource: "arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:provider.stage}-UpdateBuyerWallet"
+      - Effect: "Allow"
+        Action:
+          - lambda:InvokeFunction
+        Resource: "arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:provider.stage}-TransactionRecorder"        
+      - Effect: "Allow"
+        Action:
+          - sqs:*
+        Resource: "#{OrderQueue.Arn}"
+
+  UpdateSellerBankAccount:
+    handler: src/handler.handle_fiat_transaction
+    name: ${self:provider.stage}-UpdateSellerBankAccount
+    environment:
+      Stage: ${self:provider.stage} 
+    iamRoleStatementsName: ${self:provider.stage}-UpdateSellerBankAccount-role
+    iamRoleStatements:
+      - Effect: "Allow"
+        Action:
+          - lambda:InvokeFunction
+        Resource: "arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:provider.stage}-OrderHandler"
+
+
+  UpdateBuyerWallet:
+    handler: src/handler.handler
+    runtime: nodejs8.10
+    name: ${self:provider.stage}-UpdateBuyerWallet
+    environment:
+      Stage: ${self:provider.stage}
+      ROPSTEN_INFURA_KEY: ${self:provider.ROPSTEN_INFURA_KEY}
+      ETH_PRIV_KEY: ${self:provider.ETH_PRIV_KEY}
+      ETH_FROM_ADDRESS: ${self:provider.ETH_FROM_ADDRESS}
+    iamRoleStatementsName: ${self:provider.stage}-UpdateBuyerWallet-role
+    iamRoleStatements:
+      - Effect: "Allow"
+        Action:
+          - lambda:InvokeFunction
+        Resource: "arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:provider.stage}-OrderHandler"
+
+  SellerDashboard:
+    handler: src/handler.handle_seller_dashboard
+    name: ${self:provider.stage}-SellerDashboard
+    timeout: 10
+    environment:
+      Stage: ${self:provider.stage}
+    events:
+      - http:
+          path: get-orders
+          method: POST
+          cors: true
+          integration: lambda
+          private: true
+    iamRoleStatementsName: ${self:provider.stage}-SellerDashboard-role
+    iamRoleStatements:
+      - Effect: "Allow"
+        Action:
+          - lambda:InvokeFunction
+        Resource: "arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:provider.stage}-TransactionRecorder"
+
+  TransactionRecorder:
+    handler: src/handler.handle_transaction_recorder
+    name: ${self:provider.stage}-TransactionRecorder
+    timeout: 10
+    environment:
+      Stage: ${self:provider.stage}
+      AwsSecretStoreArn: "#{RDSSecret}"
+      DatabaseName: "exchangeDb"
+      DbClusterArn: "arn:aws:rds:${self:provider.region}:#{AWS::AccountId}:cluster:#{ExchangeDbCluster}"      
+    iamRoleStatementsName: ${self:provider.stage}-TransactionRecorder-role
+    iamRoleStatements:
+      - Effect: "Allow"
+        Action:
+          - lambda:InvokeFunction
+        Resource: "arn:aws:lambda:${self:provider.region}:#{AWS::AccountId}:function:${self:provider.stage}-OrderHandler"        
+      - Effect: "Allow"
+        Action:
+          - "rds-data:ExecuteSql"
+        Resource: "arn:aws:rds:${self:provider.region}:#{AWS::AccountId}:cluster:#{ExchangeDbCluster}"
+      - Effect: "Allow"
+        Action:
+          - "secretsmanager:GetSecretValue"
+        Resource: "#{RDSSecret}"
+
+resources:
+  Resources:
+    OrderQueue:
+      Type: "AWS::SQS::Queue"
+      Properties:
+        QueueName: "${self:provider.stage}-OrderQueue"
+    RDSSecret:
+      Type: AWS::SecretsManager::Secret
+      Properties:
+        Description: 'Secret for Orders RDS'
+        GenerateSecretString:
+          SecretStringTemplate: '{"username": "${self:provider.dbUser}"}'
+          GenerateStringKey: 'password'
+          PasswordLength: 16
+          ExcludeCharacters: '"@/\'
+    ExchangeDbCluster:
+      Type: AWS::RDS::DBCluster
+      Properties:
+        DBClusterIdentifier: ${self:provider.stage}-exchangedbcluster
+        MasterUsername: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecret, ':SecretString:username}}' ]]
+        MasterUserPassword: !Join ['', ['{{resolve:secretsmanager:', !Ref RDSSecret, ':SecretString:password}}' ]]
+        DatabaseName: exchangeDb
+        Engine: aurora
+        EngineMode: serverless
+        ScalingConfiguration:
+          AutoPause: true
+          MaxCapacity: 4
+          MinCapacity: 2
+          SecondsUntilAutoPause: 300
+    SecretRDSInstanceAttachment:
+      Type: AWS::SecretsManager::SecretTargetAttachment
+      Properties:
+        SecretId: !Ref RDSSecret
+        TargetId: !Ref ExchangeDbCluster
+        TargetType: AWS::RDS::DBCluster          
+
+plugins:
+  - serverless-python-requirements
+  - serverless-pseudo-parameters
+  - serverless-iam-roles-per-function
+  - serverless-plugin-scripts
+
+
+custom:
+  scripts:
+    hooks:
+      'deploy:finalize': 'aws rds modify-db-cluster --db-cluster-identifier ${self:provider.stage}-exchangedbcluster --enable-http-endpoint'
+  pythonRequirements:
+    noDeploy: []
+    dockerizePip: false
