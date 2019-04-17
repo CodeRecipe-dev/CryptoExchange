@@ -20,14 +20,14 @@
     /></p>
   <p><input type="text" id="0toAddressInput" placeholder="EthToAddress" value="" 
     /></p>
-    <p><button id="button0" data-url="https://izeuhigep9.execute-api.us-east-1.amazonaws.com/sample/place-order">
+    <p><button id="button0" data-url="https://oipo6olzkj.execute-api.us-east-1.amazonaws.com/sample/place-order">
       Place Order
     </button></p>
     <p id="result0"></p>
   <p><input type="text" id="1eventTypeInput" placeholder="" value="getOrders" 
     hidden
     /></p>
-    <p><button id="button1" data-url="https://izeuhigep9.execute-api.us-east-1.amazonaws.com/sample/get-orders">
+    <p><button id="button1" data-url="https://oipo6olzkj.execute-api.us-east-1.amazonaws.com/sample/get-orders">
       Get Orders
     </button></p>
     <p id="result1"></p>
@@ -44,11 +44,11 @@
           data["orderInfo"]["toAddress"] = $("#0toAddressInput").val();
           $.ajax({
             type: "POST",
-            url: "https://izeuhigep9.execute-api.us-east-1.amazonaws.com/sample/place-order",
+            url: "https://oipo6olzkj.execute-api.us-east-1.amazonaws.com/sample/place-order",
             contentType: 'application/json',
             data: JSON.stringify(data),
             headers: {
-              "x-api-key": "Tn0tHwAt8s4Dq7C68LAqW38UmKBOv5Gm98dZfbDm"
+              "x-api-key": "s9v8PzQHUJ88pDiOVMMyA3RwqHpVfTB113wbgGXn"
             },
             success: function(data){
               $("#result0").html(JSON.stringify(data))
@@ -60,10 +60,10 @@
           data["eventType"] = $("#1eventTypeInput").val();
           $.ajax({
             type: "POST",
-            url: "https://izeuhigep9.execute-api.us-east-1.amazonaws.com/sample/get-orders",
+            url: "https://oipo6olzkj.execute-api.us-east-1.amazonaws.com/sample/get-orders",
             data: data,
             headers: {
-              "x-api-key": "Tn0tHwAt8s4Dq7C68LAqW38UmKBOv5Gm98dZfbDm"
+              "x-api-key": "s9v8PzQHUJ88pDiOVMMyA3RwqHpVfTB113wbgGXn"
             },
             success: function(data){
               $("#result1").html(JSON.stringify(data))

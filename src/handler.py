@@ -2,6 +2,7 @@ import json
 import os
 import boto3
 from random import *
+import pymysql
 
 def handle_order(event, context):
     if "Records" in event:
@@ -53,7 +54,7 @@ def _update_orders_table(order_info):
         awsSecretStoreArn=os.environ['AwsSecretStoreArn'],
         dbClusterOrInstanceArn=os.environ['DbClusterArn'],
         database=database_name,
-        sqlStatements='UPDATE Orders SET tx_hash = '+order_info['tx_hash']+', wallet_address = '+order_info['wallet_address']+' WHERE order_id = '+order_info['order_id']+';'
+        sqlStatements='UPDATE Orders SET tx_hash = '+pymysql.escape_string(order_info['tx_hash'])+', wallet_address = '+pymysql.escape_string(order_info['wallet_address'])+' WHERE order_id = '+order_info['order_id']+';'
     )
 
 def handle_transaction_recorder(event, context):
@@ -146,7 +147,7 @@ def _save_order_to_db(order_info):
         awsSecretStoreArn=os.environ['AwsSecretStoreArn'],
         dbClusterOrInstanceArn=os.environ['DbClusterArn'],
         database=database_name,
-        sqlStatements="INSERT INTO Orders(user_id, order_id, coin_type, amount, price, status) VALUES (1,{},'{}',{},{},'{}')".format(order_info['order_id'], order_info['coin_type'],order_info['amount'], order_info['price'], order_info['status'])
+        sqlStatements="INSERT INTO Orders(user_id, order_id, coin_type, amount, price, status) VALUES (1,{},'{}',{},{},'{}')".format(order_info['order_id'], pymysql.escape_string(order_info['coin_type']),pymysql.escape_string(order_info['amount']), pymysql.escape_string(order_info['price']), pymysql.escape_string(order_info['status']))
     )
 
 def _build_request(event_type, order_info):
